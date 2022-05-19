@@ -1,3 +1,6 @@
+import numpy as np
+from common.functions import softmax, cross_entropy
+
 # Activation function layer
 # ReLu layer
 class Relu:
@@ -60,3 +63,25 @@ class Affine:
         
         return dx
     
+    
+# Softmax function with loss (cross-entropy) layer
+
+
+
+class SoftmaxWithLoss:
+    def __init__(self):
+        self.loss = None
+        self.y = None
+        self.t = None
+        
+    def forward(self,x,t):
+        self.y = softmax(x)
+        self.t = t
+        self.loss = cross_entropy(self.y, self.t)
+        return self.loss
+
+    def backward(self,dout):
+        batch_size = self.t.shape[0]
+        dx = (self.y - self.t) / batch_size
+        
+        return dx
