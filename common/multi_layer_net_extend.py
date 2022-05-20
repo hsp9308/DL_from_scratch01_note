@@ -7,7 +7,7 @@ from common.gradient import numerical_grad
 from common.layers import *
 from collections import OrderedDict
 
-class MultiLayerNet:
+class MultiLayerNetExtend:
     '''
     Implementation of (fully-connected) multi-layer network
     
@@ -16,16 +16,24 @@ class MultiLayerNet:
     output_size : number of output node (MNIST : 10)
     activation : activation function, 'sigmoid' or 'relu'
     weight_init_std : weight std value. Default is 0.01.
+          - 'relu' or 'he' : He initialization
+          - 'xavier' or 'sigmoid' : Xavier initialization
     weight_decay_lambda : L2 regularization weight
+    use_dropout : True or False
+    dropout_ratio : dropout ratio
+    use_batchnorm : True or False
     
     '''
     def __init__(self, input_size, hidden_size_list, output_size, activation='relu',
-                weight_init_std='relu', weight_decay_lambda=0):
+                weight_init_std='relu', weight_decay_lambda=0,
+                use_dropout=False, dropout_ratio=0.5, use_batchnorm=False):
         self.input_size = input_size
         self.output_size = output_size
         self.hidden_size_list = hidden_size_list
         self.hidden_layer_num = len(hidden_size_list)
         self.weight_decay_lambda = weight_decay_lambda
+        self.use_dropout = use_dropout
+        self.use_batchnorm = use_batchnorm
         
         self.params = {}
         self.init_weight(weight_init_std)
@@ -37,12 +45,22 @@ class MultiLayerNet:
         for i in range(1,self.hidden_layer_num+1):
             self.layers['Affine'+str(i)] = Affine(self.params['W'+str(i)],
                                             self.params['b'+str(i)])
+            # use_batchnorm == True
+            # insert gamma and beta layers to rescale the output of Affine layer
+            if self.use_batchnorm:
+                self.params['gamma' + str(i)] = np.ones(hidden_size_list[i-1])
+                self.params['beta' + str(i)] = np.zeros(hidden_size_list[i-1])
+                self.layers['BatchNorm' + str(i)] = BatchNormalization(self.params['gamma'+str(i)],
+                                                    self.params['beta'+str(i)])
             self.layers['Activation'+str(i)] = activation_layer[activation]()
+
+            if self.use_dropout:
+                self.layers['Dropout' + str(i)] = Dropout(dropout_ratio)
         
         ind = self.hidden_layer_num + 1
         self.layers['Affine'+str(ind)] = Affine(self.params['W'+str(ind)],
                                             self.params['b'+str(ind)])
-        
+        # Last layer is fully connected.
         self.last_layer = SoftmaxWithLoss()
         
      
@@ -73,6 +91,7 @@ class MultiLayerNet:
     
     
     # t : answer label
+    # L2 Regularization implemented
     def loss(self, x, t):
         y = self.predict(x)
 
@@ -100,9 +119,13 @@ class MultiLayerNet:
         grads = {}
 
         for i in range(1,self.hidden_layer_num+2):
-            grads['W'+str(i)] = numerical_gradient(loss_W, self.params['W'+str(i)])
-            grads['b'+str(i)] = numerical_gradient(loss_W, self.params['b'+str(i)])
-        
+            grads['W'+str(i)] = numerical_grad(loss_W, self.params['W'+str(i)])
+            grads['b'+str(i)] = numerical_grad(loss_W, self.params['b'+str(i)])
+
+            if self.use_batchnorm and i != self.hidden_layer_num+1:
+                grads['gamma' + str(i)] = numerical_grad(loss_W, self.params['gamma' + str(i)])
+                grads['beta' + str(i)] = numerical_grad(loss_W, self.params['beta' + str(i)])
+
         return grads
     
 
@@ -122,5 +145,9 @@ class MultiLayerNet:
         for i in range(1,self.hidden_layer_num+2):
             grads['W'+str(i)] = self.layers['Affine'+str(i)].dW + self.weight_decay_lambda * self.layers['Affine'+str(i)].W
             grads['b'+str(i)] = self.layers['Affine'+str(i)].db
+
+            if self.use_batchnorm and i != self.hidden_layer_num+1:
+                grads['gamma' + str(i)] = self.layers['BatchNorm' + str(i)].dgamma
+                grads['beta' + str(i)] = self.layers['BatchNorm' + str(i)].dbeta
 
         return grads
